@@ -9,6 +9,8 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any
 
+import markdown2
+from weasyprint import HTML
 from jinja2 import Environment, FileSystemLoader
 
 from automation.database import get_db_session, job_repository, finding_repository, asset_repository
@@ -85,19 +87,79 @@ class ReportGenerator:
         
         try:
             self._fetch_data()
-            template = self.env.get_template('markdown_report.md.j2')
             markdown_content = template.render(self.report_data)
             return markdown_content
         
         except Exception as e:
             logger.error(f"Failed to generate Markdown report: {e}")
-            return f"# Report Generation Failed\n\nError: {e}"
+            return f"# Report Generation Failed\\n\\nError: {e}"
+    
+    def generate_html_report(self) -> str:
+        """Generate a report in HTML format."""
+        
+        try:
+            markdown_content = self.generate_markdown_report()
+            
+            # Add CSS for styling
+            css_path = 'reporting/templates/report_style.css'
+            with open(css_path, 'r') as f:
+                css_content = f.read()
+            
+            html_content = markdown2.markdown(
+                markdown_content,
+                extras=["tables", "fenced-code-blocks", "code-friendly"]
+            )
+            
+            return f"""\
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>{css_content}</style>
+            </head>
+            <body>
+                <div class="container">
+                    {html_content}
+                </div>
+            </body>
+            </html>
+            """
+        
+        except Exception as e:
+            logger.error(f"Failed to generate HTML report: {e}")
+            return f"<h1>Report Generation Failed</h1><p>Error: {e}</p>"
+    
+    def save_html_report(self, file_path: str) -> bool:
+        """Save the HTML report to a file."""
+        
+        html_content = self.generate_html_report()
+        
+        try:
+            with open(file_path, 'w') as f:
+                f.write(html_content)
+            logger.info(f"HTML report saved to {file_path}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"Failed to save HTML report to {file_path}: {e}")
+            return False
+    
+    def save_pdf_report(self, file_path: str) -> bool:
+        """Generate and save a report in PDF format."""
+        
+        try:
+            html_content = self.generate_html_report()
+            HTML(string=html_content).write_pdf(file_path)
+            logger.info(f"PDF report saved to {file_path}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"Failed to generate PDF report: {e}")
+            return False
     
     def save_markdown_report(self, file_path: str) -> bool:
         """Save the Markdown report to a file."""
         
         markdown_content = self.generate_markdown_report()
-        
         try:
             with open(file_path, 'w') as f:
                 f.write(markdown_content)

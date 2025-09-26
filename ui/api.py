@@ -800,7 +800,7 @@ async def submit_post_exploitation(
 @app.post("/reports/generate")
 async def submit_report_generation(
     job_id: str,
-    report_type: str = 'markdown',
+    report_type: str = Query('markdown', enum=['markdown', 'html', 'pdf']),
     priority: int = 1
 ):
     """Submit a job to generate a penetration testing report."""
@@ -808,7 +808,7 @@ async def submit_report_generation(
         from automation.orchestrator import celery_app
         
         # Define output path
-        output_path = f"/tmp/report_{job_id}.md"
+        output_path = f"/tmp/report_{job_id}.{report_type}"
         
         # Create a job record for the report generation
         report_job = ScanJob(

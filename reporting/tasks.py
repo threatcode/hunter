@@ -38,6 +38,10 @@ def generate_report(self, job_id: str, output_path: str, report_type: str = 'mar
         
         if report_type == 'markdown':
             success = report_generator.save_markdown_report(output_path)
+        elif report_type == 'html':
+            success = report_generator.save_html_report(output_path)
+        elif report_type == 'pdf':
+            success = report_generator.save_pdf_report(output_path)
         else:
             raise ValueError(f"Unsupported report type: {report_type}")
         
