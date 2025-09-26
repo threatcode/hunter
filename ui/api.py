@@ -637,6 +637,165 @@ async def submit_class_specific_scanning(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Phase E Exploitation & Post-Exploitation Endpoints
+@app.post("/scans/exploitation-framework")
+async def submit_exploitation_framework(
+    target: str,
+    vulnerabilities: List[Dict[str, Any]] = [],
+    validate_exploit: bool = False,
+    priority: int = 9
+):
+    """Submit exploitation framework with proof-of-concept generation."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Create job record
+        job = ScanJob(
+            name=f"exploitation_{target}",
+            scan_type="exploitation_framework",
+            target=target,
+            parameters={
+                "vulnerabilities": vulnerabilities,
+                "validate_exploit": validate_exploit
+            },
+            status=ScanStatus.PENDING
+        )
+        
+        with get_db_session() as session:
+            saved_job = job_repository.create(session, job)
+            job_id = saved_job.id
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'exploit.tasks.run_exploitation_framework',
+            args=[job_id, target],
+            kwargs={
+                "vulnerabilities": vulnerabilities,
+                "validate_exploit": validate_exploit
+            },
+            priority=priority
+        )
+        
+        # Update job with Celery task ID
+        with get_db_session() as session:
+            job_repository.update_task_id(session, job_id, celery_task.id)
+        
+        return {
+            "job_id": job_id,
+            "message": f"Exploitation framework started for {target}",
+            "vulnerabilities_count": len(vulnerabilities),
+            "validate_exploit": validate_exploit
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit exploitation framework: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/scans/payload-delivery")
+async def submit_payload_delivery(
+    target: str,
+    payload_configs: List[Dict[str, Any]] = [],
+    monitor_execution: bool = False,
+    priority: int = 9
+):
+    """Submit payload delivery and execution operations."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Create job record
+        job = ScanJob(
+            name=f"payload_delivery_{target}",
+            scan_type="payload_delivery",
+            target=target,
+            parameters={
+                "payload_configs": payload_configs,
+                "monitor_execution": monitor_execution
+            },
+            status=ScanStatus.PENDING
+        )
+        
+        with get_db_session() as session:
+            saved_job = job_repository.create(session, job)
+            job_id = saved_job.id
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'exploit.tasks.run_payload_delivery',
+            args=[job_id, target],
+            kwargs={
+                "payload_configs": payload_configs,
+                "monitor_execution": monitor_execution
+            },
+            priority=priority
+        )
+        
+        # Update job with Celery task ID
+        with get_db_session() as session:
+            job_repository.update_task_id(session, job_id, celery_task.id)
+        
+        return {
+            "job_id": job_id,
+            "message": f"Payload delivery started for {target}",
+            "payloads_count": len(payload_configs),
+            "monitor_execution": monitor_execution
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit payload delivery: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/scans/post-exploitation")
+async def submit_post_exploitation(
+    target: str,
+    session_configs: List[Dict[str, Any]] = [],
+    priority: int = 9
+):
+    """Submit post-exploitation enumeration and persistence operations."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Create job record
+        job = ScanJob(
+            name=f"post_exploitation_{target}",
+            scan_type="post_exploitation",
+            target=target,
+            parameters={
+                "session_configs": session_configs
+            },
+            status=ScanStatus.PENDING
+        )
+        
+        with get_db_session() as session:
+            saved_job = job_repository.create(session, job)
+            job_id = saved_job.id
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'exploit.tasks.run_post_exploitation',
+            args=[job_id, target],
+            kwargs={
+                "session_configs": session_configs
+            },
+            priority=priority
+        )
+        
+        # Update job with Celery task ID
+        with get_db_session() as session:
+            job_repository.update_task_id(session, job_id, celery_task.id)
+        
+        return {
+            "job_id": job_id,
+            "message": f"Post-exploitation started for {target}",
+            "sessions_count": len(session_configs)
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit post-exploitation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Finding Management Endpoints
 @app.get("/findings", response_model=FindingsResponse)
 async def list_findings(
