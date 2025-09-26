@@ -38,7 +38,7 @@ polars==0.19.19
 
 # ML and AI
 openai==1.3.7
-langchain==0.0.350
+langchain==0.2.5
 sentence-transformers==2.2.2
 scikit-learn==1.3.2
 
