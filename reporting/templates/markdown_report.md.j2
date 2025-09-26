@@ -1,0 +1,70 @@
+# Penetration Test Report: {{ job.target }}
+
+**Generated on:** {{ generation_date }}
+**Scan Job ID:** {{ job.id }}
+**Scan Type:** {{ job.scan_type }}
+
+---
+
+## 1. Executive Summary
+
+This report details the findings from a penetration test conducted on **{{ job.target }}**. The scan was completed on {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') if job.completed_at else 'N/A' }}.
+
+A total of **{{ summary.total_findings }}** vulnerabilities were identified, with the following severity distribution:
+
+| Severity      | Count |
+|---------------|-------|
+| Critical      | {{ summary.severity_counts.critical }} |
+| High          | {{ summary.severity_counts.high }} |
+| Medium        | {{ summary.severity_counts.medium }} |
+| Low           | {{ summary.severity_counts.low }} |
+| Informational | {{ summary.severity_counts.informational }} |
+
+### Top 5 Vulnerability Types
+
+| Vulnerability Type          | Count |
+|-----------------------------|-------|
+{% for type, count in summary.top_vulnerability_types.items() %}| {{ type }}                    | {{ count }} |
+{% endfor %}
+
+---
+
+## 2. Affected Assets
+
+The following assets were found to have one or more vulnerabilities:
+
+{% for asset in assets %}
+- **{{ asset.type.value }}:** `{{ asset.name }}`
+{% endfor %}
+
+---
+
+## 3. Detailed Findings
+
+This section provides a detailed description of each vulnerability identified during the assessment.
+
+{% for finding in findings %}
+### 3.{{ loop.index }} {{ finding.title }}
+
+- **Severity:** {{ finding.severity.value }}
+- **Vulnerability Type:** {{ finding.vulnerability_type.value }}
+- **Status:** {{ finding.status.value }}
+- **Asset:** `{{ finding.asset_id }}`
+
+**Description:**
+{{ finding.description }}
+
+**Evidence:**
+```json
+{{ finding.evidence | tojson(indent=2) }}
+```
+
+**Remediation:**
+{{ finding.remediation }}
+
+---
+{% endfor %}
+
+## 4. Conclusion
+
+This report provides a comprehensive overview of the security posture of **{{ job.target }}** at the time of the assessment. It is recommended to prioritize the remediation of critical and high-severity vulnerabilities to mitigate the most significant risks.

@@ -796,6 +796,59 @@ async def submit_post_exploitation(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Report Generation Endpoints
+@app.post("/reports/generate")
+async def submit_report_generation(
+    job_id: str,
+    report_type: str = 'markdown',
+    priority: int = 1
+):
+    """Submit a job to generate a penetration testing report."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Define output path
+        output_path = f"/tmp/report_{job_id}.md"
+        
+        # Create a job record for the report generation
+        report_job = ScanJob(
+            name=f"report_{job_id}",
+            scan_type="report_generation",
+            target=job_id, # Target is the job_id for which we generate the report
+            parameters={
+                "original_job_id": job_id,
+                "report_type": report_type,
+                "output_path": output_path
+            },
+            status=ScanStatus.PENDING
+        )
+        
+        with get_db_session() as session:
+            saved_job = job_repository.create(session, report_job)
+            report_job_id = saved_job.id
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'reporting.tasks.generate_report',
+            args=[job_id, output_path, report_type],
+            priority=priority
+        )
+        
+        # Update job with Celery task ID
+        with get_db_session() as session:
+            job_repository.update_task_id(session, report_job_id, celery_task.id)
+        
+        return {
+            "job_id": report_job_id,
+            "message": f"Report generation started for job {job_id}",
+            "output_path": output_path
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit report generation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Finding Management Endpoints
 @app.get("/findings", response_model=FindingsResponse)
 async def list_findings(
