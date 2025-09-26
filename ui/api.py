@@ -858,6 +858,29 @@ async def submit_report_generation(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# AI-Powered Analysis Endpoints
+@app.post("/ai/attack-path-analysis", status_code=202)
+async def submit_attack_path_analysis(priority: int = 1):
+    """Submit a job to run the AI-powered attack path analysis."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'ai.tasks.run_attack_path_analysis',
+            priority=priority
+        )
+        
+        return {
+            "task_id": celery_task.id,
+            "message": "Attack path analysis has been started.",
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit attack path analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Integration Endpoints
 @app.post("/integrations/jira/create-ticket")
 async def submit_jira_ticket_creation(
@@ -883,6 +906,29 @@ async def submit_jira_ticket_creation(
     
     except Exception as e:
         logger.error(f"Failed to submit Jira ticket creation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Proactive Defense Endpoints
+@app.post("/defense/generate-rules", status_code=202)
+async def submit_rule_generation(finding_id: str, priority: int = 1):
+    """Submit a job to generate detection rules for a finding."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        celery_task = celery_app.send_task(
+            'defense.tasks.generate_detection_rules',
+            args=[finding_id],
+            priority=priority
+        )
+        
+        return {
+            "task_id": celery_task.id,
+            "message": f"Detection rule generation started for finding {finding_id}",
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit detection rule generation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
