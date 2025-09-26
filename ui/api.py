@@ -932,6 +932,50 @@ async def submit_rule_generation(finding_id: str, priority: int = 1):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/defense/generate-configs", status_code=202)
+async def submit_config_generation(finding_id: str, priority: int = 1):
+    """Submit a job to generate secure configurations for a finding."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        celery_task = celery_app.send_task(
+            'defense.tasks.generate_secure_configurations',
+            args=[finding_id],
+            priority=priority
+        )
+        
+        return {
+            "task_id": celery_task.id,
+            "message": f"Secure configuration generation started for finding {finding_id}",
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit secure configuration generation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/defense/generate-playbook", status_code=202)
+async def submit_playbook_generation(finding_id: str, priority: int = 1):
+    """Submit a job to generate a remediation playbook for a finding."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        celery_task = celery_app.send_task(
+            'defense.tasks.generate_remediation_playbook',
+            args=[finding_id],
+            priority=priority
+        )
+        
+        return {
+            "task_id": celery_task.id,
+            "message": f"Remediation playbook generation started for finding {finding_id}",
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit remediation playbook generation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Finding Management Endpoints
 @app.get("/findings", response_model=FindingsResponse)
 async def list_findings(

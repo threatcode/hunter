@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
             <h2>Recent Findings</h2>
+            <div id="notification-banner" class="notification is-hidden"></div>
             <table class="findings-table">
                 <thead>
                     <tr>
@@ -68,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <th>Severity</th>
                         <th>Asset</th>
                         <th>Status</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -77,6 +79,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td class="severity-${finding.severity.toLowerCase()}">${finding.severity}</td>
                             <td><code>${finding.asset_id}</code></td>
                             <td>${finding.status}</td>
+                            <td>
+                                <button class="action-button generate-rules-btn" data-finding-id="${finding.id}">Generate Rules</button>
+                            </td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -85,6 +90,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
         dashboardContent.innerHTML = dashboardHTML;
     };
+
+    const handleGenerateRulesClick = async (event) => {
+        const findingId = event.target.dataset.findingId;
+        if (!findingId) return;
+
+        showNotification(`Generating rules for finding: ${findingId}...`, 'info');
+
+        try {
+            const response = await fetch('/defense/generate-rules', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ finding_id: findingId }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to start rule generation.');
+            }
+
+            const result = await response.json();
+            showNotification(`Successfully started rule generation task: ${result.task_id}`, 'success');
+
+        } catch (error) {
+            showNotification(`Error: ${error.message}`, 'error');
+            console.error(error);
+        }
+    };
+
+    const showNotification = (message, type) => {
+        const banner = document.getElementById('notification-banner');
+        banner.textContent = message;
+        banner.className = `notification notification-${type}`;
+
+        setTimeout(() => {
+            banner.className = 'notification is-hidden';
+        }, 5000);
+    };
+
+    dashboardContent.addEventListener('click', (event) => {
+        if (event.target.classList.contains('generate-rules-btn')) {
+            handleGenerateRulesClick(event);
+        }
+    });
 
     fetchData();
 });
