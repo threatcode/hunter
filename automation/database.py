@@ -50,7 +50,7 @@ class JobModel(Base):
     status = Column(SQLEnum(ScanStatus), nullable=False, default=ScanStatus.PENDING)
     target = Column(String, nullable=False)
     parameters = Column(JSON, default={})
-    metadata = Column(JSON, default={})
+    extra_data = Column(JSON, default={})
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -108,7 +108,7 @@ class FindingModel(Base):
     
     # Metadata
     tags = Column(JSON, default=[])
-    metadata = Column(JSON, default={})
+    extra_data = Column(JSON, default={})
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -137,13 +137,12 @@ class AssetModel(Base):
     name = Column(String, nullable=False)  # domain name, IP, URL, etc.
     
     # Asset-specific data (stored as JSON for flexibility)
-    data = Column(JSON, default={})
     
     # Relationships
     parent_id = Column(String, ForeignKey('assets.id'), nullable=True)
     parent = relationship("AssetModel", remote_side=[id], backref="children")
     
-    # Discovery metadata
+    # Discovery
     discovered_by = Column(String, nullable=True)  # scan job ID or method
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow)
@@ -154,7 +153,7 @@ class AssetModel(Base):
     
     # Metadata
     tags = Column(JSON, default=[])
-    metadata = Column(JSON, default={})
+    extra_data = Column(JSON, default={})
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -243,9 +242,9 @@ class JobRepository(BaseRepository):
         """Update Celery task ID."""
         job = self.get_by_id(session, job_id)
         if job:
-            if not job.metadata:
-                job.metadata = {}
-            job.metadata['celery_task_id'] = task_id
+            if not job.extra_data:
+                job.extra_data = {}
+            job.extra_data['celery_task_id'] = task_id
             job.updated_at = datetime.utcnow()
             session.commit()
             session.refresh(job)

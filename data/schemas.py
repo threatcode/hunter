@@ -7,7 +7,7 @@ including domains, hosts, ASNs, organizations, services, and applications.
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field, HttpUrl
 import uuid
 
@@ -73,21 +73,33 @@ class Organization(BaseEntity):
     description: Optional[str] = None
     industry: Optional[str] = None
     size: Optional[str] = None
-    headquarters: Optional[str] = None
     subsidiaries: List[str] = Field(default_factory=list)
     acquisitions: List[str] = Field(default_factory=list)
     crunchbase_url: Optional[HttpUrl] = None
 
 
-class ASN(BaseEntity):
-    """Autonomous System Number entity."""
+class ASN(BaseModel):
     asn: int
     name: str
-    description: Optional[str] = None
-    country: Optional[str] = None
-    registry: Optional[str] = None
-    netblocks: List[str] = Field(default_factory=list)
-    organization_id: Optional[str] = None
+    route: str
+    domain: str
+    type: str
+
+class Asset(BaseModel):
+    id: str
+    asset_type: str
+    name: str
+    parent_id: Optional[str] = None
+    discovered_by: Optional[str] = None
+    first_seen: datetime
+    last_seen: datetime
+    active: bool
+    verified: bool
+    tags: List[str] = []
+    extra_data: Dict[str, Any] = {}
+
+    class Config:
+        orm_mode = True
 
 
 class Domain(BaseEntity):

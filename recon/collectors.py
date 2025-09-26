@@ -389,9 +389,10 @@ class GitHubCollector(BaseCollector):
                 headers = {'Authorization': f'token {api_key}'}
                 
                 # Search for domain mentions in code
+                escaped_domain = domain.replace('.', '\\.')
                 search_queries = [
                     f'"{domain}"',
-                    f'"{domain.replace(".", "\\.")}"',  # Escaped for regex
+                    f'"{escaped_domain}"',  # Escaped for regex
                     f'api.{domain}',
                     f'*.{domain}'
                 ]
@@ -429,7 +430,6 @@ class GitHubCollector(BaseCollector):
                 elif response.status == 403:
                     # Rate limited
                     self.add_error("GitHub API rate limited")
-                    break
         
         except Exception as e:
             self.add_error(f"GitHub code search failed for query '{query}': {e}")
