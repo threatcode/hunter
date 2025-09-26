@@ -19,6 +19,9 @@ from automation.database import get_db_session, job_repository, finding_reposito
 from automation.logging_config import audit_logger, log_scan_activity
 from automation.ai_services import analyze_vulnerability
 from data.schemas import ScanStatus, AssetType, SeverityLevel, VulnerabilityType, FindingStatus
+from fuzz.fuzzing_engine import FuzzingCollector
+from fuzz.cve_scanner import CVEScannerCollector
+from fuzz.vulnerability_scanners import VulnerabilityScannerCollector
 import httpx
 import asyncio
 
@@ -127,6 +130,123 @@ def run_fuzzing_scan(self, job_id: str, target: str, **kwargs):
     except Exception as e:
         logger.error(f"Fuzzing scan failed for job {job_id}: {e}")
         log_scan_activity(job_id, "fuzzing_scan_failed", error=str(e))
+        raise
+
+
+@celery_app.task(bind=True, base=BaseFuzzTask, name='fuzz.tasks.run_advanced_fuzzing')
+def run_advanced_fuzzing(self, job_id: str, target: str, **kwargs):
+    """Run advanced fuzzing with payload generation and mutation."""
+    
+    with get_db_session() as session:
+        job_repository.update_status(session, job_id, ScanStatus.RUNNING)
+    
+    log_scan_activity(job_id, "advanced_fuzzing_started", target=target)
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Run advanced fuzzing
+        collector = FuzzingCollector()
+        results = loop.run_until_complete(
+            collector.collect(target, **kwargs)
+        )
+        
+        # Process results
+        findings_count = process_advanced_fuzzing_results(job_id, target, results)
+        
+        log_scan_activity(job_id, "advanced_fuzzing_completed", 
+                         vulnerabilities_found=len([r for r in results if r.get('type') == 'vulnerability_found']),
+                         findings_count=findings_count)
+        
+        return {
+            'target': target,
+            'results': results,
+            'findings_count': findings_count,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Advanced fuzzing failed for job {job_id}: {e}")
+        log_scan_activity(job_id, "advanced_fuzzing_failed", error=str(e))
+        raise
+
+
+@celery_app.task(bind=True, base=BaseFuzzTask, name='fuzz.tasks.run_cve_scanning')
+def run_cve_scanning(self, job_id: str, target: str, **kwargs):
+    """Run CVE scanning with Nuclei and custom detection."""
+    
+    with get_db_session() as session:
+        job_repository.update_status(session, job_id, ScanStatus.RUNNING)
+    
+    log_scan_activity(job_id, "cve_scanning_started", target=target)
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Run CVE scanning
+        collector = CVEScannerCollector()
+        results = loop.run_until_complete(
+            collector.collect(target, **kwargs)
+        )
+        
+        # Process results
+        findings_count = process_cve_scan_results(job_id, target, results)
+        
+        log_scan_activity(job_id, "cve_scanning_completed", 
+                         vulnerabilities_found=len([r for r in results if 'vulnerability' in r.get('type', '')]),
+                         findings_count=findings_count)
+        
+        return {
+            'target': target,
+            'results': results,
+            'findings_count': findings_count,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"CVE scanning failed for job {job_id}: {e}")
+        log_scan_activity(job_id, "cve_scanning_failed", error=str(e))
+        raise
+
+
+@celery_app.task(bind=True, base=BaseFuzzTask, name='fuzz.tasks.run_class_specific_scanning')
+def run_class_specific_scanning(self, job_id: str, target: str, **kwargs):
+    """Run class-specific vulnerability scanning."""
+    
+    with get_db_session() as session:
+        job_repository.update_status(session, job_id, ScanStatus.RUNNING)
+    
+    log_scan_activity(job_id, "class_specific_scanning_started", target=target)
+    
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Run vulnerability scanning
+        collector = VulnerabilityScannerCollector()
+        results = loop.run_until_complete(
+            collector.collect(target, **kwargs)
+        )
+        
+        # Process results
+        findings_count = process_class_specific_results(job_id, target, results)
+        
+        log_scan_activity(job_id, "class_specific_scanning_completed", 
+                         vulnerabilities_found=len([r for r in results if r.get('type') == 'vulnerability_found']),
+                         findings_count=findings_count)
+        
+        return {
+            'target': target,
+            'results': results,
+            'findings_count': findings_count,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Class-specific scanning failed for job {job_id}: {e}")
+        log_scan_activity(job_id, "class_specific_scanning_failed", error=str(e))
         raise
 
 
@@ -781,3 +901,295 @@ def create_vulnerability_finding(session, vuln: Dict[str, Any], job_id: str):
     }
     
     finding_repository.create(session, finding_data)
+
+
+def process_advanced_fuzzing_results(job_id: str, target: str, results: List[Dict[str, Any]]) -> int:
+    """Process advanced fuzzing results and create findings."""
+    
+    findings_count = 0
+    
+    try:
+        with get_db_session() as session:
+            for result in results:
+                if result.get('type') == 'vulnerability_found':
+                    create_advanced_vulnerability_finding(session, result, job_id)
+                    findings_count += 1
+                
+                elif result.get('type') == 'fuzzing_results':
+                    # Store fuzzing metadata
+                    create_fuzzing_asset(session, result, job_id)
+    
+    except Exception as e:
+        logger.error(f"Failed to process advanced fuzzing results: {e}")
+    
+    return findings_count
+
+
+def process_cve_scan_results(job_id: str, target: str, results: List[Dict[str, Any]]) -> int:
+    """Process CVE scan results and create findings."""
+    
+    findings_count = 0
+    
+    try:
+        with get_db_session() as session:
+            for result in results:
+                if result.get('type') == 'nuclei_vulnerability':
+                    create_nuclei_vulnerability_finding(session, result, job_id)
+                    findings_count += 1
+                
+                elif result.get('type') == 'custom_cve_vulnerability':
+                    create_custom_cve_finding(session, result, job_id)
+                    findings_count += 1
+    
+    except Exception as e:
+        logger.error(f"Failed to process CVE scan results: {e}")
+    
+    return findings_count
+
+
+def process_class_specific_results(job_id: str, target: str, results: List[Dict[str, Any]]) -> int:
+    """Process class-specific vulnerability scan results."""
+    
+    findings_count = 0
+    
+    try:
+        with get_db_session() as session:
+            for result in results:
+                if result.get('type') == 'vulnerability_found':
+                    create_class_specific_vulnerability_finding(session, result, job_id)
+                    findings_count += 1
+    
+    except Exception as e:
+        logger.error(f"Failed to process class-specific results: {e}")
+    
+    return findings_count
+
+
+def create_advanced_vulnerability_finding(session, result: Dict[str, Any], job_id: str):
+    """Create finding for advanced fuzzing vulnerability."""
+    
+    vulnerability = result.get('vulnerability', {})
+    vuln_type = vulnerability.get('vulnerability_type', 'unknown')
+    url = vulnerability.get('url', '')
+    parameter = vulnerability.get('parameter', '')
+    payload = vulnerability.get('payload', '')
+    confidence = vulnerability.get('confidence', 0.5)
+    
+    # Map vulnerability type to severity
+    severity_mapping = {
+        'xss': SeverityLevel.MEDIUM,
+        'sqli': SeverityLevel.HIGH,
+        'rce': SeverityLevel.CRITICAL,
+        'ssrf': SeverityLevel.HIGH,
+        'lfi': SeverityLevel.MEDIUM,
+        'xxe': SeverityLevel.HIGH,
+        'ssti': SeverityLevel.HIGH
+    }
+    
+    severity = severity_mapping.get(vuln_type, SeverityLevel.MEDIUM)
+    
+    finding_data = {
+        'title': f"Advanced Fuzzing: {vuln_type.upper()} in {parameter}",
+        'description': f"Advanced fuzzing detected {vuln_type.upper()} vulnerability in parameter '{parameter}' using payload: {payload}",
+        'severity': severity,
+        'vulnerability_type': VulnerabilityType.INJECTION if vuln_type in ['xss', 'sqli', 'ssti'] else VulnerabilityType.SSRF if vuln_type == 'ssrf' else VulnerabilityType.LOGIC_FLAW,
+        'confidence': confidence,
+        'asset_type': AssetType.ENDPOINT,
+        'asset_id': url,
+        'affected_url': url,
+        'evidence': [{
+            'type': 'advanced_fuzzing_result',
+            'vulnerability_type': vuln_type,
+            'parameter': parameter,
+            'payload': payload,
+            'indicators': vulnerability.get('indicators', []),
+            'timestamp': vulnerability.get('timestamp', datetime.utcnow().isoformat())
+        }],
+        'remediation': get_vulnerability_remediation(vuln_type),
+        'job_id': job_id
+    }
+    
+    finding_repository.create(session, finding_data)
+
+
+def create_nuclei_vulnerability_finding(session, result: Dict[str, Any], job_id: str):
+    """Create finding for Nuclei-discovered vulnerability."""
+    
+    vulnerability = result.get('vulnerability', {})
+    template_id = vulnerability.get('template_id', '')
+    template_name = vulnerability.get('template_name', '')
+    severity = vulnerability.get('severity', 'medium')
+    matched_at = vulnerability.get('matched_at', '')
+    cve_ids = vulnerability.get('cve_ids', [])
+    cvss_score = vulnerability.get('cvss_score', 0.0)
+    
+    # Map Nuclei severity to our severity levels
+    severity_mapping = {
+        'critical': SeverityLevel.CRITICAL,
+        'high': SeverityLevel.HIGH,
+        'medium': SeverityLevel.MEDIUM,
+        'low': SeverityLevel.LOW,
+        'info': SeverityLevel.INFO
+    }
+    
+    mapped_severity = severity_mapping.get(severity.lower(), SeverityLevel.MEDIUM)
+    
+    finding_data = {
+        'title': f"Nuclei Detection: {template_name}",
+        'description': f"Nuclei template {template_id} detected vulnerability: {vulnerability.get('description', template_name)}",
+        'severity': mapped_severity,
+        'vulnerability_type': VulnerabilityType.CVE if cve_ids else VulnerabilityType.MISCONFIGURATION,
+        'confidence': 0.9,  # High confidence for Nuclei detections
+        'asset_type': AssetType.ENDPOINT,
+        'asset_id': matched_at,
+        'affected_url': matched_at,
+        'evidence': [{
+            'type': 'nuclei_detection',
+            'template_id': template_id,
+            'template_name': template_name,
+            'cve_ids': cve_ids,
+            'cvss_score': cvss_score,
+            'classification': vulnerability.get('classification', {}),
+            'request': vulnerability.get('request', ''),
+            'response': vulnerability.get('response', ''),
+            'timestamp': vulnerability.get('timestamp', datetime.utcnow().isoformat())
+        }],
+        'remediation': f"Review and remediate the vulnerability detected by Nuclei template {template_id}",
+        'job_id': job_id
+    }
+    
+    finding_repository.create(session, finding_data)
+
+
+def create_custom_cve_finding(session, result: Dict[str, Any], job_id: str):
+    """Create finding for custom CVE detection."""
+    
+    vulnerability = result.get('vulnerability', {})
+    cve_id = vulnerability.get('cve_id', '')
+    rule_name = vulnerability.get('rule_name', '')
+    url = vulnerability.get('url', '')
+    severity = vulnerability.get('severity', 'medium')
+    
+    # Map severity
+    severity_mapping = {
+        'critical': SeverityLevel.CRITICAL,
+        'high': SeverityLevel.HIGH,
+        'medium': SeverityLevel.MEDIUM,
+        'low': SeverityLevel.LOW
+    }
+    
+    mapped_severity = severity_mapping.get(severity.lower(), SeverityLevel.MEDIUM)
+    
+    title = f"CVE Detection: {cve_id}" if cve_id else f"Custom Rule: {rule_name}"
+    
+    finding_data = {
+        'title': title,
+        'description': vulnerability.get('description', f"Custom detection rule triggered: {rule_name}"),
+        'severity': mapped_severity,
+        'vulnerability_type': VulnerabilityType.CVE if cve_id else VulnerabilityType.MISCONFIGURATION,
+        'confidence': 0.8,
+        'asset_type': AssetType.ENDPOINT,
+        'asset_id': url,
+        'affected_url': url,
+        'evidence': [{
+            'type': 'custom_cve_detection',
+            'cve_id': cve_id,
+            'rule_name': rule_name,
+            'indicators_found': vulnerability.get('indicators_found', []),
+            'detection_type': vulnerability.get('detection_type', ''),
+            'timestamp': vulnerability.get('timestamp', datetime.utcnow().isoformat())
+        }],
+        'remediation': f"Review and patch the vulnerability: {cve_id or rule_name}",
+        'job_id': job_id
+    }
+    
+    finding_repository.create(session, finding_data)
+
+
+def create_class_specific_vulnerability_finding(session, result: Dict[str, Any], job_id: str):
+    """Create finding for class-specific vulnerability scanner."""
+    
+    vulnerability = result.get('vulnerability', {})
+    vuln_type = vulnerability.get('vulnerability_type', 'unknown')
+    url = vulnerability.get('url', '')
+    parameter = vulnerability.get('parameter', '')
+    confidence = vulnerability.get('confidence', 0.5)
+    
+    # Map vulnerability types
+    severity_mapping = {
+        'xss': SeverityLevel.MEDIUM,
+        'sqli': SeverityLevel.HIGH,
+        'ssrf': SeverityLevel.HIGH,
+        'idor': SeverityLevel.MEDIUM,
+        'lfi': SeverityLevel.MEDIUM,
+        'rce': SeverityLevel.CRITICAL
+    }
+    
+    severity = severity_mapping.get(vuln_type, SeverityLevel.MEDIUM)
+    
+    finding_data = {
+        'title': f"Class-Specific Scanner: {vuln_type.upper()} Vulnerability",
+        'description': f"Class-specific scanner detected {vuln_type.upper()} vulnerability in parameter '{parameter}'",
+        'severity': severity,
+        'vulnerability_type': VulnerabilityType.INJECTION if vuln_type in ['xss', 'sqli'] else VulnerabilityType.SSRF if vuln_type == 'ssrf' else VulnerabilityType.LOGIC_FLAW,
+        'confidence': confidence,
+        'asset_type': AssetType.ENDPOINT,
+        'asset_id': url,
+        'affected_url': url,
+        'evidence': [{
+            'type': 'class_specific_scan',
+            'vulnerability_type': vuln_type,
+            'parameter': parameter,
+            'payload': vulnerability.get('payload', ''),
+            'indicators': vulnerability.get('indicators', []),
+            'timestamp': vulnerability.get('timestamp', datetime.utcnow().isoformat())
+        }],
+        'remediation': get_vulnerability_remediation(vuln_type),
+        'job_id': job_id
+    }
+    
+    finding_repository.create(session, finding_data)
+
+
+def create_fuzzing_asset(session, result: Dict[str, Any], job_id: str):
+    """Create asset for fuzzing metadata."""
+    
+    fuzz_data = result.get('fuzz_data', {})
+    endpoint = fuzz_data.get('endpoint', '')
+    
+    if not endpoint:
+        return
+    
+    asset_data = {
+        'asset_type': 'fuzzing_session',
+        'name': f"fuzz_{endpoint}",
+        'data': {
+            'endpoint': endpoint,
+            'method': fuzz_data.get('method', 'GET'),
+            'parameters_tested': len(fuzz_data.get('parameters_tested', [])),
+            'total_requests': fuzz_data.get('total_requests', 0),
+            'vulnerabilities_found': len(fuzz_data.get('vulnerabilities_found', [])),
+            'fuzzing_timestamp': datetime.utcnow().isoformat()
+        },
+        'discovered_by': job_id,
+        'active': True
+    }
+    
+    asset_repository.create(session, asset_data)
+
+
+def get_vulnerability_remediation(vuln_type: str) -> str:
+    """Get remediation advice for vulnerability type."""
+    
+    remediation_map = {
+        'xss': 'Implement proper input validation and output encoding. Use Content Security Policy (CSP).',
+        'sqli': 'Use parameterized queries and prepared statements. Implement input validation.',
+        'ssrf': 'Implement URL validation and whitelist allowed destinations. Use network segmentation.',
+        'lfi': 'Implement proper file path validation and use absolute paths. Avoid user input in file operations.',
+        'rce': 'Avoid executing user input. Use safe APIs and implement strict input validation.',
+        'idor': 'Implement proper access controls and authorization checks for all objects.',
+        'xxe': 'Disable external entity processing in XML parsers. Use safe XML parsing libraries.',
+        'ssti': 'Use safe template engines and avoid user input in templates. Implement sandboxing.'
+    }
+    
+    return remediation_map.get(vuln_type, 'Review the vulnerability and implement appropriate security controls.')

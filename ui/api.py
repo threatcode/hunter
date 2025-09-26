@@ -466,6 +466,177 @@ async def submit_technology_profiling(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Phase D Vulnerability Detection & Fuzzing Endpoints
+@app.post("/scans/advanced-fuzzing")
+async def submit_advanced_fuzzing(
+    target: str,
+    endpoints: List[Dict[str, Any]] = [],
+    vulnerability_types: List[str] = ["xss", "sqli", "ssrf", "lfi", "rce"],
+    max_payloads_per_type: int = 20,
+    priority: int = 8
+):
+    """Submit advanced fuzzing with payload generation and mutation."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Create job record
+        job = ScanJob(
+            name=f"advanced_fuzzing_{target}",
+            scan_type="advanced_fuzzing",
+            target=target,
+            parameters={
+                "endpoints": endpoints,
+                "vulnerability_types": vulnerability_types,
+                "max_payloads_per_type": max_payloads_per_type
+            },
+            status=ScanStatus.PENDING
+        )
+        
+        with get_db_session() as session:
+            saved_job = job_repository.create(session, job)
+            job_id = saved_job.id
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'fuzz.tasks.run_advanced_fuzzing',
+            args=[job_id, target],
+            kwargs={
+                "endpoints": endpoints,
+                "vulnerability_types": vulnerability_types,
+                "max_payloads_per_type": max_payloads_per_type
+            },
+            priority=priority
+        )
+        
+        # Update job with Celery task ID
+        with get_db_session() as session:
+            job_repository.update_task_id(session, job_id, celery_task.id)
+        
+        return {
+            "job_id": job_id,
+            "message": f"Advanced fuzzing started for {target}",
+            "vulnerability_types": vulnerability_types,
+            "max_payloads_per_type": max_payloads_per_type
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit advanced fuzzing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/scans/cve-scanning")
+async def submit_cve_scanning(
+    target: str,
+    severity: List[str] = ["critical", "high", "medium"],
+    tags: List[str] = [],
+    templates: List[str] = [],
+    rate_limit: int = 150,
+    priority: int = 8
+):
+    """Submit CVE scanning with Nuclei and custom detection."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Create job record
+        job = ScanJob(
+            name=f"cve_scanning_{target}",
+            scan_type="cve_scanning",
+            target=target,
+            parameters={
+                "severity": severity,
+                "tags": tags,
+                "templates": templates,
+                "rate_limit": rate_limit
+            },
+            status=ScanStatus.PENDING
+        )
+        
+        with get_db_session() as session:
+            saved_job = job_repository.create(session, job)
+            job_id = saved_job.id
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'fuzz.tasks.run_cve_scanning',
+            args=[job_id, target],
+            kwargs={
+                "severity": severity,
+                "tags": tags,
+                "templates": templates,
+                "rate_limit": rate_limit
+            },
+            priority=priority
+        )
+        
+        # Update job with Celery task ID
+        with get_db_session() as session:
+            job_repository.update_task_id(session, job_id, celery_task.id)
+        
+        return {
+            "job_id": job_id,
+            "message": f"CVE scanning started for {target}",
+            "severity": severity,
+            "rate_limit": rate_limit
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit CVE scanning: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/scans/class-specific-scanning")
+async def submit_class_specific_scanning(
+    target: str,
+    endpoints: List[Dict[str, Any]] = [],
+    vulnerability_types: List[str] = ["xss", "sqli", "ssrf"],
+    priority: int = 7
+):
+    """Submit class-specific vulnerability scanning (XSS, SQLi, SSRF, etc.)."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Create job record
+        job = ScanJob(
+            name=f"class_specific_{target}",
+            scan_type="class_specific_scanning",
+            target=target,
+            parameters={
+                "endpoints": endpoints,
+                "vulnerability_types": vulnerability_types
+            },
+            status=ScanStatus.PENDING
+        )
+        
+        with get_db_session() as session:
+            saved_job = job_repository.create(session, job)
+            job_id = saved_job.id
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'fuzz.tasks.run_class_specific_scanning',
+            args=[job_id, target],
+            kwargs={
+                "endpoints": endpoints,
+                "vulnerability_types": vulnerability_types
+            },
+            priority=priority
+        )
+        
+        # Update job with Celery task ID
+        with get_db_session() as session:
+            job_repository.update_task_id(session, job_id, celery_task.id)
+        
+        return {
+            "job_id": job_id,
+            "message": f"Class-specific scanning started for {target}",
+            "vulnerability_types": vulnerability_types
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit class-specific scanning: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Finding Management Endpoints
 @app.get("/findings", response_model=FindingsResponse)
 async def list_findings(
