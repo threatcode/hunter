@@ -3,43 +3,52 @@ FastAPI web interface for the AI Bug Hunter framework.
 
 This module provides REST API endpoints for managing scans, findings,
 and assets through a web interface.
-"""
 
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
 from data.schemas import (
     ScanRequest, ScanResponse, ScanJob, ScanType, ScanStatus,
-    Finding, FindingStatus, SeverityLevel, VulnerabilityType,
-    FindingsResponse, AssetResponse
-)
-from automation.orchestrator import orchestrator, workflow_orchestrator, health_check
-from automation.database import get_db_session, finding_repository, job_repository, asset_repository
-from automation.logging_config import audit_logger
-from automation.api_manager import api_manager
-from automation.ai_services import triage_finding_ai, generate_finding_poc
-
-
+{{ ... }}
 logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
     title="AI Bug Hunter API",
-    description="REST API for the AI Bug Hunter security testing framework",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    description="API for managing and orchestrating security scans.",
+    version="1.0.0"
+)
+
+# Mount the static directory to serve frontend files
+app.mount("/static", StaticFiles(directory="ui/static"), name="static")
+
+
+@app.get("/", response_class=FileResponse)
+async def read_root():
+    return "ui/static/index.html"
+
+
+# Middleware for logging requests
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    response = await call_next(request)
+    logger.info(f"{request.method} {request.url.path} {response.status_code}")
+    return response
+
+# Middleware for logging requestsdoc_url="/redoc"
 )
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
+{{ ... }}
     allow_origins=["*"],  # Configure appropriately for production
     allow_credentials=True,
     allow_methods=["*"],
@@ -846,6 +855,34 @@ async def submit_report_generation(
     
     except Exception as e:
         logger.error(f"Failed to submit report generation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Integration Endpoints
+@app.post("/integrations/jira/create-ticket")
+async def submit_jira_ticket_creation(
+    finding_id: str,
+    project_key: str = None, # Optional: override the default project key
+    priority: int = 2
+):
+    """Submit a job to create a Jira ticket for a finding."""
+    try:
+        from automation.orchestrator import celery_app
+        
+        # Submit to Celery
+        celery_task = celery_app.send_task(
+            'integrations.tasks.create_jira_ticket',
+            args=[finding_id, project_key],
+            priority=priority
+        )
+        
+        return {
+            "task_id": celery_task.id,
+            "message": f"Jira ticket creation started for finding {finding_id}",
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to submit Jira ticket creation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
