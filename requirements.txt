@@ -55,7 +55,7 @@ click==8.1.7
 pillow==10.1.0
 
 # Cryptography and certificates
-cryptography==41.0.8
+cryptography==44.0.1
 pyopenssl==23.3.0
 
 # Testing
