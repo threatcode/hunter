@@ -52,7 +52,7 @@ pyyaml==6.0.1
 click==8.1.7
 
 # Image processing
-pillow==10.1.0
+pillow==10.3.0
 
 # Cryptography and certificates
 cryptography==41.0.8
